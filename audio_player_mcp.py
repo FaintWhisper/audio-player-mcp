@@ -32,7 +32,7 @@ sys.stdout.reconfigure(line_buffering=True)
 mcp = FastMCP("audio-player")
 
 # Setup audio directory - use environment variable or default
-AUDIO_DIR = Path(os.environ.get('AUDIO_PLAYER_DIR', '/Users/scott/AI/MCP/audio-player-mcp/audio'))
+AUDIO_DIR = Path(os.environ.get('AUDIO_PLAYER_DIR', '/Users/scott/AI/MCP/audio'))
 logger.info(f"Using audio directory: {AUDIO_DIR}")
 
 # Verify directory exists
@@ -63,6 +63,34 @@ def list_audio_files() -> str:
         return json.dumps({"files": files})
     except Exception as e:
         logger.error(f"Error listing audio files: {e}")
+        raise
+
+
+@mcp.tool()
+async def list_audio_files(ctx: Context) -> dict:
+    """List all available audio files in the audio directory"""
+    logger.info("Listing audio files via tool")
+    try:
+        files = [
+            f.name
+            for f in AUDIO_DIR.iterdir()
+            if f.is_file() and f.suffix.lower() in {'.mp3', '.wav', '.ogg'}
+        ]
+        
+        # Log the results
+        logger.info(f"Found {len(files)} audio files")
+        ctx.info(f"Retrieved {len(files)} audio files")
+        
+        return {
+            "status": "success",
+            "files": files,
+            "count": len(files)
+        }
+        
+    except Exception as e:
+        error_msg = f"Error listing audio files: {str(e)}"
+        logger.error(error_msg)
+        ctx.error(error_msg)
         raise
 
 @mcp.tool()
