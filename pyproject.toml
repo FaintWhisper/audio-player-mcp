@@ -1,10 +1,30 @@
 [project]
 name = "audio-player-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for controlling audio playback"
 readme = "README.md"
-requires-python = ">=3.10.14"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["mcp", "audio", "claude", "llm"]
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License", 
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Multimedia :: Sound/Audio",
+]
 dependencies = [
     "mcp[cli]>=1.2.0",
     "pygame>=2.6.1",
 ]
+
+[project.scripts]
+audio-player-mcp = "audio_player_mcp.player:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

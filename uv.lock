@@ -1,5 +1,5 @@
 version = 1
-requires-python = ">=3.10.14"
+requires-python = ">=3.10"
 
 [[package]]
 name = "annotated-types"
@@ -28,7 +28,7 @@ wheels = [
 [[package]]
 name = "audio-player-mcp"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "pygame" },
