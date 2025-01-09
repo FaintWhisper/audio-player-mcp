@@ -19,7 +19,7 @@ A Model Context Protocol (MCP) server that allows Claude to control audio playba
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/audio-player-mcp.git
+   git clone https://github.com/Here-and-Tomorrow-LLC/audio-player-mcp.git
    ```
 
 2. Navigate to the repository directory:
