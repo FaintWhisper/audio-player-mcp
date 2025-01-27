@@ -1,5 +1,6 @@
-
 # Audio Player MCP Server
+
+[![smithery badge](https://smithery.ai/badge/@Here-and-Tomorrow-LLC/audio-player-mcp)](https://smithery.ai/server/@Here-and-Tomorrow-LLC/audio-player-mcp)
 
 A Model Context Protocol (MCP) server that allows Claude to control audio playback on your computer.
 
@@ -17,6 +18,15 @@ A Model Context Protocol (MCP) server that allows Claude to control audio playba
 
 ## Installation
 
+### Installing via Smithery
+
+To install Audio Player for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@Here-and-Tomorrow-LLC/audio-player-mcp):
+
+```bash
+npx -y @smithery/cli install @Here-and-Tomorrow-LLC/audio-player-mcp --client claude
+```
+
+### Manual Installation
 1. Clone the repository:
    ```bash
    git clone https://github.com/Here-and-Tomorrow-LLC/audio-player-mcp.git
