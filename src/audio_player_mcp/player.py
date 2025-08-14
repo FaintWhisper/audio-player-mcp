@@ -1343,6 +1343,74 @@ async def search_by_genre(genre: str, ctx: Context, limit: int = 20) -> dict:
         raise
 
 @mcp.tool()
+async def play_random_song_by_artist(artist: str, ctx: Context) -> dict:
+    """Play a random song by the specified artist"""
+    logger.info(f"Playing random song by artist: '{artist}'")
+    
+    try:
+        import random
+        
+        # Search for songs by the artist
+        search_result = await search_songs(artist, ctx, limit=100)  # Get more options for randomness
+        
+        if search_result["status"] != "success" or not search_result["matches"]:
+            return {
+                "status": "no_matches",
+                "message": f"No songs found by artist '{artist}'"
+            }
+        
+        # Filter results to prioritize artist matches over filename matches
+        artist_matches = []
+        other_matches = []
+        
+        for match in search_result["matches"]:
+            # Check if the match is likely an artist match
+            if (match.get("artist") and 
+                fuzz.partial_ratio(artist.lower(), match["artist"].lower()) >= 80):
+                artist_matches.append(match)
+            elif (match.get("display_info") and 
+                  fuzz.partial_ratio(artist.lower(), match["display_info"].lower()) >= 80):
+                artist_matches.append(match)
+            elif match.get("match_type") == "metadata":
+                artist_matches.append(match)
+            else:
+                other_matches.append(match)
+        
+        # Prefer artist matches, but fall back to other matches if needed
+        available_songs = artist_matches if artist_matches else other_matches
+        
+        if not available_songs:
+            return {
+                "status": "no_matches",
+                "message": f"No songs found by artist '{artist}'"
+            }
+        
+        # Pick a random song from the available options
+        random_song = random.choice(available_songs)
+        
+        # Play the selected song
+        play_result = await play_audio(random_song["file"], ctx)
+        
+        # Add artist info to the result
+        if play_result.get("status") == "success":
+            play_result["artist_searched"] = artist
+            play_result["selected_from"] = f"{len(available_songs)} songs by '{artist}'"
+            play_result["match_score"] = random_song.get("score", 0)
+            play_result["match_type"] = random_song.get("match_type", "unknown")
+            if random_song.get("artist"):
+                play_result["artist_metadata"] = random_song["artist"]
+            if random_song.get("title"):
+                play_result["title_metadata"] = random_song["title"]
+        
+        return play_result
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Play random song by artist error: {error_msg}")
+        ctx.error(error_msg)
+        raise
+
+@mcp.tool()
 async def play_random_from_genre(genre: str, ctx: Context) -> dict:
     """Play a random song from the specified genre"""
     logger.info(f"Playing random song from genre: '{genre}'")

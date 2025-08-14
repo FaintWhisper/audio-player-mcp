@@ -16,6 +16,7 @@ A comprehensive Model Context Protocol (MCP) server that allows Claude to contro
 - **Metadata-Aware Search**: Search by artist name, song title, or filename
 - **Fuzzy Search**: Find songs with partial matches and typos
 - **Genre Search**: Browse music by genre with metadata extraction
+- **Random Artist Selection**: Play random songs by specific artists
 - **Popular Music Support**: Optimized for mainstream artists and songs
 - **Priority Matching**: Metadata matches prioritized over filename matches
 
@@ -122,11 +123,16 @@ A comprehensive Model Context Protocol (MCP) server that allows Claude to contro
 
 ### Advanced Search
 ```
+### Advanced Search
+
+```
 "Play Taylor Swift"               # Search by artist
 "Play Blinding Lights"           # Search by song title
 "Find songs by Drake"            # Artist search
 "Play some pop music"            # Genre search
 "Search for Shape of You"        # Title search
+"Play a random Taylor Swift song" # Random song by artist
+```
 ```
 
 ### Playback Controls
@@ -165,6 +171,7 @@ A comprehensive Model Context Protocol (MCP) server that allows Claude to contro
 | `get_playback_status` | Get current playback status |
 | `search_songs` | Search for songs by metadata/filename |
 | `search_and_play` | Search and automatically play best match |
+| `play_random_song_by_artist` | Play a random song by specified artist |
 | `list_folders` | Show folder structure and file counts |
 | `diagnose_audio_system` | Check VLC and audio system status |
 
