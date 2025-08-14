@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple test script to verify VLC playback functionality
-Usage: python test_vlc_playback.py "path/to/audio/file.flac"
+Usage: python test_vlc_playback.py "path/to/audio/file"
 """
 
 import sys
@@ -81,7 +81,7 @@ def test_vlc_playback(file_path):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python test_vlc_playback.py \"path/to/audio/file\"")
-        print("Example: python test_vlc_playback.py \"C:\\Users\\Amit\\Music\\MP3\\Outside (feat. Ellie Goulding) - Calvin Harris.flac\"")
+        print("Example: python test_vlc_playback.py \"/path/to/music/song.mp3\"")
         sys.exit(1)
     
     file_path = sys.argv[1]

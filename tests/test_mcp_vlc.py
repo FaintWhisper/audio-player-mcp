@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 # Add the src directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Import the player module
 from audio_player_mcp.player import state
@@ -19,9 +19,19 @@ def test_mcp_vlc_environment():
     """Test VLC in an environment similar to MCP server"""
     
     print("🔍 Testing VLC in MCP-like environment...")
+    print("Looking for popular songs to test with...")
     
-    # Set up environment similar to MCP server
-    test_file = r"C:\Users\Amit\Music\MP3\Outside (feat. Ellie Goulding) - Calvin Harris.flac"
+    # Try to find any popular song files (more flexible approach)
+    from audio_player_mcp.player import _get_audio_files, AUDIO_DIR
+    
+    files = _get_audio_files()
+    if not files:
+        print("❌ No audio files found in music directory")
+        return False
+    
+    # Convert relative path to absolute for the first available file
+    test_file = str(AUDIO_DIR / files[0])
+    print(f"📀 Using test file: {Path(test_file).name}")
     
     if not Path(test_file).exists():
         print(f"❌ Test file not found: {test_file}")
@@ -136,7 +146,7 @@ if __name__ == "__main__":
     else:
         print("💥 VLC MCP test FAILED!")
         print("\n📝 Debugging tips:")
-        print("1. Check if VLC media player is installed on Windows")
+        print("1. Check if VLC media player is installed on your system")
         print("2. Verify audio drivers are working")
-        print("3. Try running as administrator")
-        print("4. Check Windows audio settings")
+        print("3. Try running with elevated privileges if needed")
+        print("4. Check system audio settings")

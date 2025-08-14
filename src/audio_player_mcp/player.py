@@ -15,6 +15,7 @@ from pathlib import Path
 import time
 import threading
 from fuzzywuzzy import fuzz, process
+from mutagen import File as MutagenFile
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -31,8 +32,25 @@ sys.stdout.reconfigure(line_buffering=True)
 # Initialize MCP server
 mcp = FastMCP("audio-player")
 
-# Update in player.py
-AUDIO_DIR = Path(os.environ.get('AUDIO_PLAYER_DIR', os.path.expanduser('~/Music')))  # More universal default
+# Update in player.py - handle both Windows and WSL paths
+def _get_music_directory():
+    """Get the correct music directory path for both Windows and WSL"""
+    if 'AUDIO_PLAYER_DIR' in os.environ:
+        return Path(os.environ['AUDIO_PLAYER_DIR'])
+    
+    # Check if we're running in WSL
+    if os.path.exists('/mnt/c/Users'):
+        # We're in WSL, use the Windows path via /mnt/c
+        return Path('/mnt/c/Users/Amit/Music')
+    else:
+        # We're on Windows or other system, use standard paths
+        windows_path = Path('C:/Users/Amit/Music')
+        if windows_path.exists():
+            return windows_path
+        else:
+            return Path(os.path.expanduser('~/Music'))
+
+AUDIO_DIR = _get_music_directory()
 logger.info(f"Using audio directory: {AUDIO_DIR}")
 
 # Supported audio formats
@@ -225,6 +243,135 @@ def _preprocess_music_query(query: str) -> str:
     
     return normalized
 
+def _create_search_data_for_file(file_path: str) -> dict:
+    """Create comprehensive search data for a file including metadata and filename"""
+    try:
+        # Convert relative path to absolute path for metadata extraction
+        absolute_path = AUDIO_DIR / file_path
+        
+        # Extract metadata
+        title, artist = _extract_title_and_artist(str(absolute_path))
+        
+        # Get filename without extension
+        filename_stem = Path(file_path).stem
+        
+        # Create searchable text combinations
+        search_texts = []
+        
+        # 1. Title and Artist from metadata (highest priority)
+        if title and artist:
+            search_texts.append(f"{artist} - {title}")
+            search_texts.append(f"{title} {artist}")
+            search_texts.append(title)
+            search_texts.append(artist)
+        elif title:
+            search_texts.append(title)
+        elif artist:
+            search_texts.append(artist)
+        
+        # 2. Filename (cleaned and normalized)
+        clean_filename = filename_stem.replace('_', ' ').replace('-', ' ').replace('.', ' ')
+        normalized_filename = _normalize_music_terms(clean_filename)
+        search_texts.append(normalized_filename)
+        search_texts.append(clean_filename)
+        
+        # 3. Raw filename stem
+        search_texts.append(filename_stem)
+        
+        return {
+            "file_path": file_path,
+            "title": title,
+            "artist": artist,
+            "filename": filename_stem,
+            "search_texts": search_texts
+        }
+        
+    except Exception as e:
+        logger.debug(f"Error creating search data for {file_path}: {e}")
+        # Fallback to filename only
+        filename_stem = Path(file_path).stem
+        clean_filename = filename_stem.replace('_', ' ').replace('-', ' ').replace('.', ' ')
+        return {
+            "file_path": file_path,
+            "title": "",
+            "artist": "",
+            "filename": filename_stem,
+            "search_texts": [clean_filename, filename_stem]
+        }
+
+def _enhanced_metadata_search(files: list, query: str, limit: int = 10) -> list:
+    """Enhanced search that considers title, artist metadata and filename"""
+    if not query.strip():
+        return []
+    
+    logger.info(f"Performing enhanced metadata search for: '{query}'")
+    
+    # Create search data for all files
+    search_data = []
+    for file_path in files:
+        search_data.append(_create_search_data_for_file(file_path))
+    
+    query_lower = query.lower().strip()
+    normalized_query = _preprocess_music_query(query)
+    
+    # Score matches with different priorities
+    scored_matches = []
+    
+    for data in search_data:
+        max_score = 0
+        best_match_text = ""
+        match_type = ""
+        
+        # Check each search text for this file
+        for i, search_text in enumerate(data["search_texts"]):
+            search_text_lower = search_text.lower()
+            
+            # Priority weights (metadata gets higher priority than filename)
+            if i == 0 and data["title"] and data["artist"]:  # "Artist - Title"
+                weight = 1.0
+                match_type = "artist_title"
+            elif i <= 3 and (data["title"] or data["artist"]):  # Other metadata combinations
+                weight = 0.9
+                match_type = "metadata"
+            else:  # Filename-based
+                weight = 0.7
+                match_type = "filename"
+            
+            # Exact match (highest priority)
+            if query_lower == search_text_lower:
+                score = 100 * weight
+            # Exact phrase match
+            elif query_lower in search_text_lower:
+                score = 95 * weight
+            # Fuzzy match
+            else:
+                # Use token sort ratio for better matching of reordered words
+                fuzzy_score = fuzz.token_sort_ratio(normalized_query, search_text)
+                score = fuzzy_score * weight
+            
+            if score > max_score:
+                max_score = score
+                best_match_text = search_text
+                if score >= 95:  # Keep the high-priority match type for exact/phrase matches
+                    match_type = match_type
+                else:
+                    match_type = f"{match_type}_fuzzy"
+        
+        if max_score >= 30:  # Minimum threshold
+            scored_matches.append({
+                "file_path": data["file_path"],
+                "score": max_score,
+                "match_text": best_match_text,
+                "match_type": match_type,
+                "title": data["title"],
+                "artist": data["artist"],
+                "filename": data["filename"]
+            })
+    
+    # Sort by score (descending) and return top matches
+    scored_matches.sort(key=lambda x: x["score"], reverse=True)
+    return scored_matches[:limit]
+
 def _enhanced_music_search(candidates: list, query: str, limit: int = 10) -> list:
     """Enhanced search specifically designed for music files"""
     normalized_query = _preprocess_music_query(query)
@@ -266,6 +413,226 @@ def _enhanced_music_search(candidates: list, query: str, limit: int = 10) -> lis
     
     return all_matches[:limit]
 
+def _extract_title_and_artist(file_path: str) -> tuple[str, str]:
+    """Extract title and artist information from audio file metadata"""
+    try:
+        audio_file = MutagenFile(file_path)
+        if audio_file is None:
+            return "", ""
+        
+        title = ""
+        artist = ""
+        
+        # Try different approaches based on file type
+        if hasattr(audio_file, 'tags') and audio_file.tags:
+            tags = audio_file.tags
+            
+            # For MP3 files with ID3 tags
+            if hasattr(tags, 'get'):
+                # Try various ID3 title tag formats
+                for title_key in ['TIT2', 'TITLE', 'Title']:
+                    if title_key in tags:
+                        title_value = tags[title_key]
+                        if hasattr(title_value, 'text') and title_value.text:
+                            title = str(title_value.text[0])
+                            break
+                        elif isinstance(title_value, list) and len(title_value) > 0:
+                            title = str(title_value[0])
+                            break
+                
+                # Try various ID3 artist tag formats
+                for artist_key in ['TPE1', 'ARTIST', 'Artist']:
+                    if artist_key in tags:
+                        artist_value = tags[artist_key]
+                        if hasattr(artist_value, 'text') and artist_value.text:
+                            artist = str(artist_value.text[0])
+                            break
+                        elif isinstance(artist_value, list) and len(artist_value) > 0:
+                            artist = str(artist_value[0])
+                            break
+        
+        # For FLAC, OGG, and other formats - try common field names
+        if not title and hasattr(audio_file, 'get'):
+            for title_key in ['TITLE', 'title', 'Title']:
+                if title_key in audio_file:
+                    title_value = audio_file[title_key]
+                    if isinstance(title_value, list) and len(title_value) > 0:
+                        title = str(title_value[0])
+                        break
+                    elif isinstance(title_value, str):
+                        title = title_value
+                        break
+        
+        if not artist and hasattr(audio_file, 'get'):
+            for artist_key in ['ARTIST', 'artist', 'Artist']:
+                if artist_key in audio_file:
+                    artist_value = audio_file[artist_key]
+                    if isinstance(artist_value, list) and len(artist_value) > 0:
+                        artist = str(artist_value[0])
+                        break
+                    elif isinstance(artist_value, str):
+                        artist = artist_value
+                        break
+        
+        # Alternative approach: direct dictionary access
+        if not title:
+            for title_key in ['TITLE', 'title', 'Title', 'TIT2']:
+                try:
+                    if title_key in audio_file:
+                        title_value = audio_file[title_key]
+                        if isinstance(title_value, list) and len(title_value) > 0:
+                            title = str(title_value[0])
+                            break
+                        elif isinstance(title_value, str):
+                            title = title_value
+                            break
+                except Exception:
+                    continue
+        
+        if not artist:
+            for artist_key in ['ARTIST', 'artist', 'Artist', 'TPE1']:
+                try:
+                    if artist_key in audio_file:
+                        artist_value = audio_file[artist_key]
+                        if isinstance(artist_value, list) and len(artist_value) > 0:
+                            artist = str(artist_value[0])
+                            break
+                        elif isinstance(artist_value, str):
+                            artist = artist_value
+                            break
+                except Exception:
+                    continue
+        
+        # Clean up the strings
+        if title:
+            title = title.strip()
+        if artist:
+            artist = artist.strip()
+        
+        return title, artist
+        
+    except Exception as e:
+        logger.debug(f"Could not extract title/artist from {file_path}: {e}")
+        return "", ""
+
+def _extract_genre_from_file(file_path: str) -> str:
+    """Extract genre information from audio file metadata"""
+    try:
+        audio_file = MutagenFile(file_path)
+        if audio_file is None:
+            return "Unknown"
+        
+        # Debug: Let's see what tags are available
+        # logger.debug(f"Available tags for {file_path}: {list(audio_file.keys())}")
+        
+        genre = None
+        
+        # Try different approaches based on file type
+        if hasattr(audio_file, 'tags') and audio_file.tags:
+            tags = audio_file.tags
+            
+            # For MP3 files with ID3 tags
+            if hasattr(tags, 'get'):
+                # Try various ID3 genre tag formats
+                for genre_key in ['TCON', 'TCO', 'TIT1']:  # TCON is standard, TCO is old format
+                    if genre_key in tags:
+                        genre_value = tags[genre_key]
+                        if hasattr(genre_value, 'text') and genre_value.text:
+                            genre = str(genre_value.text[0])
+                            break
+                        elif isinstance(genre_value, list) and len(genre_value) > 0:
+                            genre = str(genre_value[0])
+                            break
+        
+        # For FLAC, OGG, and other formats - try common genre field names
+        if not genre and hasattr(audio_file, 'get'):
+            for genre_key in ['GENRE', 'genre', 'Genre']:
+                if genre_key in audio_file:
+                    genre_value = audio_file[genre_key]
+                    if isinstance(genre_value, list) and len(genre_value) > 0:
+                        genre = str(genre_value[0])
+                        break
+                    elif isinstance(genre_value, str):
+                        genre = genre_value
+                        break
+        
+        # Alternative approach: direct dictionary access
+        if not genre:
+            # Try direct access to the audio file as dict
+            for genre_key in ['GENRE', 'genre', 'Genre', 'TCON']:
+                try:
+                    if genre_key in audio_file:
+                        genre_value = audio_file[genre_key]
+                        if isinstance(genre_value, list) and len(genre_value) > 0:
+                            genre = str(genre_value[0])
+                            break
+                        elif isinstance(genre_value, str):
+                            genre = genre_value
+                            break
+                except Exception:
+                    continue
+        
+        # Clean up the genre string
+        if genre:
+            genre = genre.strip()
+            # Remove ID3v1 genre numbers (e.g., "(13)" or "(13)Pop")
+            import re
+            genre = re.sub(r'^\(\d+\)', '', genre).strip()
+            if genre.startswith('(') and genre.endswith(')'):
+                genre = genre[1:-1]
+            # Capitalize properly
+            if genre:
+                genre = genre.title()
+                return genre if genre else "Unknown"
+        
+        return "Unknown"
+        
+    except Exception as e:
+        logger.debug(f"Could not extract genre from {file_path}: {e}")
+        return "Unknown"
+
+def _get_all_genres() -> dict:
+    """Get all unique genres from the music collection with file counts"""
+    files = _get_audio_files()
+    genre_counts = {}
+    
+    logger.info(f"Extracting genres from {len(files)} files...")
+    
+    for file_path in files:
+        # Convert relative path to absolute path
+        absolute_path = AUDIO_DIR / file_path
+        genre = _extract_genre_from_file(str(absolute_path))
+        if genre in genre_counts:
+            genre_counts[genre] += 1
+        else:
+            genre_counts[genre] = 1
+    
+    return genre_counts
+
+def _search_by_genre(genre_query: str, limit: int = 20) -> list:
+    """Search for songs by genre"""
+    files = _get_audio_files()
+    matching_files = []
+    
+    genre_query_lower = genre_query.lower().strip()
+    
+    for file_path in files:
+        # Convert relative path to absolute path
+        absolute_path = AUDIO_DIR / file_path
+        file_genre = _extract_genre_from_file(str(absolute_path))
+        if file_genre.lower() == genre_query_lower or genre_query_lower in file_genre.lower():
+            matching_files.append({
+                "file": file_path,
+                "name": Path(file_path).name,
+                "folder": str(Path(file_path).parent) if Path(file_path).parent != Path('.') else "root",
+                "genre": file_genre
+            })
+            
+            if len(matching_files) >= limit:
+                break
+    
+    return matching_files
+
 @mcp.tool()
 async def search_songs(query: str, ctx: Context, limit: int = 10) -> dict:
     """Search for songs using fuzzy matching"""
@@ -295,37 +662,34 @@ async def search_songs(query: str, ctx: Context, limit: int = 10) -> dict:
                 } for f in files[:limit]
             ]
         else:
-            # Use enhanced music-specific search
-            
-            # Extract just filenames without extensions for better matching
-            file_names_for_search = []
-            for file in files:
-                # Remove file extension and clean up the name for searching
-                name_without_ext = Path(file).stem
-                # Replace common separators with spaces for better matching
-                clean_name = name_without_ext.replace('_', ' ').replace('-', ' ').replace('.', ' ')
-                # Normalize music terminology
-                normalized_name = _normalize_music_terms(clean_name)
-                file_names_for_search.append(normalized_name)
-            
-            # Use enhanced search algorithm
-            search_results = _enhanced_music_search(file_names_for_search, query, limit)
+            # Use enhanced metadata search that considers title, artist and filename
+            search_results = _enhanced_metadata_search(files, query, limit)
             
             # Convert results to our format
-            scored_matches = []
-            for match_text, score, original_index in search_results:
-                original_file = files[original_index]
-                scored_matches.append({
-                    "file": original_file,
-                    "name": Path(original_file).name,
-                    "folder": str(Path(original_file).parent) if Path(original_file).parent != Path('.') else "root",
-                    "score": round(score, 1),
-                    "match_type": "enhanced_music_search",
-                    "matched_text": match_text
+            matches = []
+            for result in search_results:
+                # Create display info with metadata when available
+                display_name = Path(result["file_path"]).name
+                if result["title"] and result["artist"]:
+                    display_info = f"{result['artist']} - {result['title']}"
+                elif result["title"]:
+                    display_info = result["title"]
+                elif result["artist"]:
+                    display_info = result["artist"]
+                else:
+                    display_info = display_name
+                
+                matches.append({
+                    "file": result["file_path"],
+                    "name": display_name,
+                    "folder": str(Path(result["file_path"]).parent) if Path(result["file_path"]).parent != Path('.') else "root",
+                    "score": round(result["score"], 1),
+                    "match_type": result["match_type"],
+                    "matched_text": result["match_text"],
+                    "display_info": display_info,
+                    "title": result["title"],
+                    "artist": result["artist"]
                 })
-            
-            # Filter out very low scores (below 30)
-            matches = [m for m in scored_matches if m["score"] >= 30]
         
         logger.info(f"Found {len(matches)} matches for query '{query}'")
         ctx.info(f"Found {len(matches)} matching songs")
@@ -920,6 +1284,96 @@ async def seek_to_position(position_seconds: int, ctx: Context) -> dict:
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Seek error: {error_msg}")
+        ctx.error(error_msg)
+        raise
+
+@mcp.tool()
+async def list_genres(ctx: Context) -> dict:
+    """List all available genres in the music collection with counts"""
+    logger.info("Listing all genres in music collection")
+    
+    try:
+        genre_counts = _get_all_genres()
+        
+        # Sort genres by count (most common first)
+        sorted_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        total_files = sum(genre_counts.values())
+        unique_genres = len(genre_counts)
+        
+        ctx.info(f"Found {unique_genres} unique genres across {total_files} files")
+        
+        return {
+            "status": "success",
+            "total_files": total_files,
+            "unique_genres": unique_genres,
+            "genres": [
+                {"genre": genre, "count": count} 
+                for genre, count in sorted_genres
+            ]
+        }
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"List genres error: {error_msg}")
+        ctx.error(error_msg)
+        raise
+
+@mcp.tool()
+async def search_by_genre(genre: str, ctx: Context, limit: int = 20) -> dict:
+    """Search for songs by genre"""
+    logger.info(f"Searching for songs in genre: '{genre}'")
+    
+    try:
+        matching_files = _search_by_genre(genre, limit)
+        
+        ctx.info(f"Found {len(matching_files)} songs in genre '{genre}'")
+        
+        return {
+            "status": "success",
+            "genre": genre,
+            "matches": matching_files,
+            "count": len(matching_files)
+        }
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Search by genre error: {error_msg}")
+        ctx.error(error_msg)
+        raise
+
+@mcp.tool()
+async def play_random_from_genre(genre: str, ctx: Context) -> dict:
+    """Play a random song from the specified genre"""
+    logger.info(f"Playing random song from genre: '{genre}'")
+    
+    try:
+        import random
+        
+        matching_files = _search_by_genre(genre, limit=100)  # Get more options for randomness
+        
+        if not matching_files:
+            return {
+                "status": "no_matches",
+                "message": f"No songs found in genre '{genre}'"
+            }
+        
+        # Pick a random song
+        random_song = random.choice(matching_files)
+        
+        # Play the selected song
+        play_result = await play_audio(random_song["file"], ctx)
+        
+        # Add genre info to the result
+        if play_result.get("status") == "success":
+            play_result["genre"] = random_song["genre"]
+            play_result["selected_from"] = f"{len(matching_files)} songs in genre '{genre}'"
+        
+        return play_result
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Play random from genre error: {error_msg}")
         ctx.error(error_msg)
         raise
 

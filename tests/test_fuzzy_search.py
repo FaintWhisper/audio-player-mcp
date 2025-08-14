@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # Add the src directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
     from fuzzywuzzy import process
@@ -47,18 +47,28 @@ try:
     for folder, count in sorted(folders.items()):
         print(f"  {folder}: {count} files")
     
-    # Test searches
+    # Test searches with popular songs and artists
     test_queries = [
-        "calvin harris",
-        "outside",
-        "ellie goulding", 
-        "harris calvin",  # reversed order
-        "outsde",  # typo
+        "taylor swift",  # Popular artist
+        "shake it off",  # Hit song
+        "drake",  # Popular rapper
+        "gods plan",  # Drake hit
+        "billie eilish",  # Popular artist
+        "bad guy",  # Billie Eilish hit
+        "weeknd",  # The Weeknd (partial)
+        "blinding lights",  # The Weeknd hit
+        "post malone",  # Popular artist
+        "circles",  # Post Malone hit
+        "ariana grande",  # Popular artist  
+        "thank u next",  # Ariana Grande hit
+        "ed sheeran",  # Popular artist
+        "shape of you",  # Ed Sheeran hit
+        "dua lipa",  # Popular artist
+        "levitating",  # Dua Lipa hit
         "featuring",  # should find songs with "featuring" 
         "feat",  # should find songs with "feat" or "featuring"
-        "ft",  # another abbreviation
         "remix",  # music term
-        "original mix"  # compound music term
+        "original"  # common in song titles
     ]
     
     print("\n🔎 Testing fuzzy search:")
