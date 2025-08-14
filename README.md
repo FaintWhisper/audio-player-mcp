@@ -1,7 +1,7 @@
 
-# Audio Player MCP Server
+# Music Player MCP Server
 
-A comprehensive Model Context Protocol (MCP) server that allows Claude to control audio playback with advanced search, metadata extraction, and playback features.
+A comprehensive Model Context Protocol (MCP) server that allows an MCP client (such as Claude Desktop or VS Code) to control audio playback with advanced search, metadata extraction, and playback features.
 
 ## 🎵 Features
 
@@ -122,8 +122,6 @@ A comprehensive Model Context Protocol (MCP) server that allows Claude to contro
 ```
 
 ### Advanced Search
-```
-### Advanced Search
 
 ```
 "Play Taylor Swift"               # Search by artist
@@ -132,7 +130,6 @@ A comprehensive Model Context Protocol (MCP) server that allows Claude to contro
 "Play some pop music"            # Genre search
 "Search for Shape of You"        # Title search
 "Play a random Taylor Swift song" # Random song by artist
-```
 ```
 
 ### Playback Controls
